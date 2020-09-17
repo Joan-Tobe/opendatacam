@@ -7,7 +7,7 @@ const http = require('http');
 const next = require('next');
 const sse = require('server-sent-events');
 const ip = require('ip');
-const YOLO = require('./server/processes/YOLO');
+var YOLO;
 const Opendatacam = require('./server/Opendatacam');
 const flatten = require('lodash.flatten');
 const getURLData = require('./server/utils/urlHelper').getURLData;
@@ -17,6 +17,8 @@ const MjpegProxy = require('./server/utils/mjpegproxy').MjpegProxy;
 const intercept = require("intercept-stdout");
 const config = require('./config.json');
 const configHelper = require('./server/utils/configHelper')
+const Tracker = require('node-moving-things-tracker').Tracker;
+const GpsTracker = require('./server/tracker/GpsTracker');
 
 if(process.env.npm_package_version !== config.OPENDATACAM_VERSION) {
   console.log('-----------------------------------')
@@ -40,16 +42,34 @@ if(SIMULATION_MODE) {
   console.log('-     Opendatacam initialized     -')
   console.log('- IN SIMULATION MODE              -')
   console.log('-----------------------------------')
+  YOLO = require('./server/processes/YoloSimulation');
 } else {
   console.log('-----------------------------------')
   console.log('-     Opendatacam initialized     -')
   console.log('- Config loaded:                  -')
   console.log(JSON.stringify(config, null, 2));
   console.log('-----------------------------------')
+  YOLO = require('./server/processes/YoloDarknet');
 }
 
-// Init processes
-YOLO.init(SIMULATION_MODE);
+// Initial YOLO config
+const yoloConfig = {
+  yoloParams: config.NEURAL_NETWORK_PARAMS[config.NEURAL_NETWORK],
+  videoType: config.VIDEO_INPUT,
+  videoParams: config.VIDEO_INPUTS_PARAMS[config.VIDEO_INPUT],
+  jsonStreamPort: configHelper.getJsonStreamPort(),
+  mjpegStreamPort: configHelper.getMjpegStreamPort(),
+  darknetPath: config.PATH_TO_YOLO_DARKNET,
+};
+YOLO.init(yoloConfig);
+
+// Select tracker, based on GPS settings in config
+var tracker = Tracker;
+const isGpsEnabled = config.GPS && config.GPS.enabled === true;
+if(isGpsEnabled) {
+  tracker = new GpsTracker(Tracker, config.GPS);
+}
+Opendatacam.setTracker(tracker);
 
 // Init connection to db
 DBManager.init().then(
@@ -112,7 +132,7 @@ app.prepare()
     YOLO.start(); // Inside yolo process will check is started
 
     const urlData = getURLData(req);
-    Opendatacam.listenToYOLO(urlData);
+    Opendatacam.listenToYOLO(YOLO, urlData);
 
     return app.render(req, res, '/')
   })
@@ -133,7 +153,7 @@ app.prepare()
   express.get('/start', (req, res) => {
     YOLO.start(); // Inside yolo process will check is started
     const urlData = getURLData(req);
-    Opendatacam.listenToYOLO(urlData);
+    Opendatacam.listenToYOLO(YOLO, urlData);
     res.sendStatus(200)
   });
 
@@ -497,10 +517,10 @@ app.prepare()
    *   HTTP/1.1 200 OK
   */
   express.get('/recording/start', (req, res) => {
-    if(config.VIDEO_INPUT !== "file") {
+    if(YOLO.isLive()) {
       Opendatacam.startRecording();
     } else {
-      Opendatacam.requestFileRecording()
+      Opendatacam.requestFileRecording(YOLO);
     }
     res.sendStatus(200)
   });
@@ -843,17 +863,26 @@ app.prepare()
         data = flatten(data);
         // Map counting area name
         data = data.map((countedItem) => {
-          return {
+          const ret = {
             ...countedItem,
             timestamp: countedItem.timestamp.toISOString(),
             area: counterData.areas[countedItem.area].name
           }
+
+          const isGpsEnabled = config.GPS && config.GPS.enabled === true;
+          const isExportOsmLink = config.GPS && config.GPS.csvExportOpenStreetMapsUrl === true;
+          const isLatLonPresent = countedItem.lat !== null && countedItem.lon !== null;
+          if(isGpsEnabled && isExportOsmLink && isLatLonPresent) {
+            ret.link = `https://www.openstreetmap.org/?mlat=${countedItem.lat}&mlon=${countedItem.lon}#map=19/${countedItem.lat}/${countedItem.lon}`
+          }
+
+          return ret;
         })
       } else {
         data = [];
       }
       console.log(`Exporting ${req.params.id} counter history to CSV`);
-      res.csv(data, false ,{'Content-disposition': `attachment; filename=counterData-${counterData.dateStart.toISOString().split("T")[0]}-${req.params.id}.csv`});
+      res.csv(data, true ,{'Content-disposition': `attachment; filename=counterData-${counterData.dateStart.toISOString().split("T")[0]}-${req.params.id}.csv`});
     });
   })
 
@@ -1022,14 +1051,14 @@ app.prepare()
       cb(null, file.originalname)
     }
   })
-  var uploadMulter = multer({ 
-    storage: storage, 
+  var uploadMulter = multer({
+    storage: storage,
     fileFilter: function (req, file, cb) {
       if (!file.originalname.match(/\.(mp4|avi|mov)$/)) {
         return cb(new Error('Only video files are allowed!'));
       }
       cb(null, true);
-    } 
+    }
   }).single('video')
 
   // API to Upload file and restart yolo on that file
@@ -1055,7 +1084,12 @@ app.prepare()
         console.log('YOLO stopped');
         // TODO set run on file
         console.log(req.file.path);
-        YOLO.init(false, req.file.path);
+
+        const yoloConfigClone = cloneDeep(yoloConfig);
+        yoloConfigClone.videoParams = req.file.path;
+        yoloConfigClone.videoType = "file";
+        YOLO.init(yoloConfigClone);
+
         YOLO.start();
         Opendatacam.recordingStatus.filename = req.file.filename;
       },(error) => {
@@ -1070,7 +1104,7 @@ app.prepare()
     })
   })
 
-  
+
 
 
   /**

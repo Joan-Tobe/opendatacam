@@ -38,6 +38,7 @@ We offer several customization options:
     - [Use Environment Variables](#use-environment-variables)
       - [Without Docker](#without-docker)
       - [With docker-compose](#with-docker-compose)
+    - [GPS](#gps)
 
 ### General
 
@@ -134,7 +135,7 @@ By default we are displaying the mobility classes:
 
 ![Display classes](https://user-images.githubusercontent.com/533590/56987855-f0101c00-6b64-11e9-8bf4-afd83a53f991.png)
 
-If you want to customize it you should modify the `DISPLAY_CLASSES` config.  
+If you want to customize it you should modify the `DISPLAY_CLASSES` config.
 
 ```json
 "DISPLAY_CLASSES": [
@@ -213,7 +214,7 @@ For example, you can modify the default from:
 }
 ```
 
-To 
+To
 
 ```json
 "COUNTER_COLORS": {
@@ -251,7 +252,7 @@ _Technical note:_
 
 Behind the hoods, this config input becomes [the input of the darknet](https://github.com/opendatacam/opendatacam/blob/master/server/processes/YOLO.js#L32) process which then get [fed into OpenCV VideoCapture()](https://github.com/AlexeyAB/darknet/blob/master/src/image_opencv.cpp#L577).
 
-As we compile OpenCV with Gstreamer support when installing OpenDataCam, we can use any [Gstreamer pipeline](http://www.einarsundgren.se/gstreamer-basic-real-time-streaming-tutorial/) as input + other VideoCapture supported format like video files / IP cam streams. 
+As we compile OpenCV with Gstreamer support when installing OpenDataCam, we can use any [Gstreamer pipeline](http://www.einarsundgren.se/gstreamer-basic-real-time-streaming-tutorial/) as input + other VideoCapture supported format like video files / IP cam streams.
 
 You can add your own gstreamer pipeline for your needs by adding an entry to `"VIDEO_INPUTS_PARAMS"`
 
@@ -311,9 +312,9 @@ Once you do have the video file inside the `opendatacam_videos` folder, you can 
 ```json
 "VIDEO_INPUT": "file"
 ```
- 
+
 2. Change `VIDEO_INPUTS_PARAMS > file` with the path to your file
- 
+
 ```json
 "VIDEO_INPUTS_PARAMS": {
   "file": "opendatacam_videos/file.mp4"
@@ -465,7 +466,8 @@ You can tweak some settings of the tracker to optimize OpenDataCam better for yo
   "objectMaxAreaInPercentageOfFrame": 80,
   "confidence_threshold": 0.2,
   "iouLimit": 0.05,
-  "unMatchedFrameTolerance": 5
+  "unMatchedFrameTolerance": 5,
+  "fastDelete": true
 }
 ```
 
@@ -476,6 +478,8 @@ You can tweak some settings of the tracker to optimize OpenDataCam better for yo
 - `iouLimit`: When tracking from frame to frame exclude object from beeing matched as same object as previous frame (same id) if their IOU (Intersection over union) is lower than this. More details on how tracker works here: https://github.com/opendatacam/node-moving-things-tracker/blob/master/README.md#how-does-it-work
 
 - `unMatchedFrameTolerance`: This the number of frame we keep predicting the object trajectory if it is not matched by the next frame list of detections. Setting this higher will cause less ID switches, but more potential false positive with an ID going to another object.
+
+- `fastDelete`: If false, detections will always be kept for `unMatchedFrameTolerance` in the buffer. Otherwise, detections will be dropped from the tracker buffer if they can not be machted the next frame they appeared. Setting this to `false` can help with tracking difficult objects, but may have side effects like more frequent object ID switches or lower FPS as more objects will be kept in the buffer.
 
 #### Counter settings
 
@@ -514,7 +518,7 @@ By default the Mongodb will be persisted in the `/data/db` directory of your hos
 
 #### Ports
 
-You can modify the default ports used by OpenDataCam. 
+You can modify the default ports used by OpenDataCam.
 
 ```json
 "PORTS": {
@@ -585,7 +589,7 @@ Some of the entries in `config.json` can be overwritten using environment variab
 
 If you are running opendatacam without docker you can set these by:
 
-- adding a file called `.env` to the root of the project, 
+- adding a file called `.env` to the root of the project,
   then these will be picked up by the [dotenv](https://www.npmjs.com/package/dotenv) package.
 - adding these variables to your `.bashrc` or `.zshrc` depending on what shell you are using or any other configuration file that gets loaded into your shell sessions.
 - adding them to the command you use to start the opendatacam,
@@ -628,7 +632,46 @@ service:
       - ./.env
 ```
 
-You also can add these variables to the call of  the `docker-compose` command. For example like this `docker-compose up -e PORT_APP=8080`. 
+You also can add these variables to the call of  the `docker-compose` command. For example like this `docker-compose up -e PORT_APP=8080`.
 
+#### GPS
 
+OpenDataCam can obtain the current position of the tracker via GPS and persist it along other counter data.
+This is useful in situations where the OpenDataCam is mobile e.g. used as a dashcam or mounted to a drone.
 
+##### Requirements
+
+To receive GPS position a GPS enabled device must be connected to your Jetson or PC.
+See [GPSD's list of supported devices](https://gpsd.gitlab.io/gpsd/hardware.html).
+
+Additionally you will need GPSD running.
+The easiest way to run GPSD is through docker using the [opensourcefoundries/gpsd](https://registry.hub.docker.com/r/opensourcefoundries/gpsd) image.
+To start GPSD execute the following command:
+
+```
+# This assumes your device is /dev/ttyAMA0. Please Change accordingly to your setup.
+GPS_DEVICE=/dev/ttyAMA0; docker run -d -p 2947:2947 --device=$GPS_DEVICE opensourcefoundries/gpsd $GPS_DEVICE
+```
+
+If you want GPSD to start automatically, add the GPSD to your `docker-compose.yml`, or GPSD can run on your machine without docker.
+
+##### Configuration
+
+To enable GPS add the following section to your `config.json`
+
+```json
+"GPS": {
+  "enabled": true,
+  "port": 2947,
+  "hostname": "localhost",
+  "signalLossTimeoutSeconds": 60,
+  "csvExportOpenStreetMapsUrl": true
+}
+```
+
+Whereas
+
+- `enabled` is a flag to control the feature
+- `port` and `hostname`: Contain the location of the GPS Deamon. If GPSD is running on Linux outside of docker, the IP `172.17.0.1` will allow you to connect to it.
+- `signalLossTimeoutSeconds`: In case of temporary position loss, the old signal will remain valid for this many seconds.
+- `csvExportOpenStreetMapsUrl`: Besides the raw `lat` and `lon` values, a link to OpenStreetMaps may be added to the exported CSV
