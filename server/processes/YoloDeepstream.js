@@ -10,12 +10,9 @@ let YOLO = {
   isInitialized: false,
   process: null,
   config: {
-    yoloParams: null,
-    videoType: null,
-    videoParams: null,
-    jsonStreamPort: null,
-    mjpegStreamPort: null,
-    darknetPath: null,
+    deepstreamPath: null,
+    deepstreamApp: null,
+    deepstreamConfigFile: null,
   }
 };
 
@@ -28,21 +25,9 @@ module.exports = {
       }
     })
 
-    var darknetCommand = [];
-    var initialCommand = ['./darknet','detector','demo', YOLO.config.yoloParams.data , YOLO.config.yoloParams.cfg, YOLO.config.yoloParams.weights];
-    var endCommand = ['-ext_output','-dont_show', '-dontdraw_bbox','-json_port', YOLO.config.jsonStreamPort , '-mjpeg_port', YOLO.config.mjpegStreamPort];
-
-    // Special case if input camera is specified as a -c flag as we need to add one arg
-    if(YOLO.config.videoParams.indexOf('-c') === 0) {
-      darknetCommand = initialCommand.concat(YOLO.config.videoParams.split(" ")).concat(endCommand);
-    } else {
-      darknetCommand = initialCommand.concat(YOLO.config.videoParams).concat(endCommand);
-    }
-
-    YOLO.process = new (forever.Monitor)(darknetCommand,{
+    YOLO.process = new (forever.Monitor)([YOLO.config.deepstreamApp, '-c', YOLO.config.deepstreamConfigFile], {
       max: Number.POSITIVE_INFINITY,
-      cwd: YOLO.config.darknetPath,
-      env: { 'LD_LIBRARY_PATH': './' },
+      cwd: YOLO.config.deepstreamPath,
       killTree: true
     });
 

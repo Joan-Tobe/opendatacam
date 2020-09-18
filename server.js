@@ -14,7 +14,6 @@ const getURLData = require('./server/utils/urlHelper').getURLData;
 const DBManager = require('./server/db/DBManager')
 const FileSystemManager = require('./server/fs/FileSystemManager')
 const MjpegProxy = require('./server/utils/mjpegproxy').MjpegProxy;
-const intercept = require("intercept-stdout");
 const config = require('./config.json');
 const configHelper = require('./server/utils/configHelper')
 const Tracker = require('node-moving-things-tracker').Tracker;
@@ -37,29 +36,32 @@ const app = next({ dev })
 const handle = app.getRequestHandler()
 
 // Log config loaded
+let videoResolution = null;
 if(SIMULATION_MODE) {
   console.log('-----------------------------------')
   console.log('-     Opendatacam initialized     -')
   console.log('- IN SIMULATION MODE              -')
   console.log('-----------------------------------')
   YOLO = require('./server/processes/YoloSimulation');
+  videoResolution = { w: 1280, h: 720 };
 } else {
   console.log('-----------------------------------')
   console.log('-     Opendatacam initialized     -')
   console.log('- Config loaded:                  -')
   console.log(JSON.stringify(config, null, 2));
   console.log('-----------------------------------')
-  YOLO = require('./server/processes/YoloDarknet');
+  YOLO = require('./server/processes/YoloDeepstream');
+  // DEEPSTREAM_RESOLUTION and PORTS must match what you
+  // specified in deepstream's configuration file
+  videoResolution = config.DEEPSTREAM_RESOLUTION;
 }
+Opendatacam.setVideoResolution(videoResolution);
 
 // Initial YOLO config
 const yoloConfig = {
-  yoloParams: config.NEURAL_NETWORK_PARAMS[config.NEURAL_NETWORK],
-  videoType: config.VIDEO_INPUT,
-  videoParams: config.VIDEO_INPUTS_PARAMS[config.VIDEO_INPUT],
-  jsonStreamPort: configHelper.getJsonStreamPort(),
-  mjpegStreamPort: configHelper.getMjpegStreamPort(),
-  darknetPath: config.PATH_TO_YOLO_DARKNET,
+  deepstreamPath: config.PATH_TO_YOLO_DEEPSTREAM,
+  deepstreamApp: config.DEEPSTREAM_APP,
+  deepstreamConfigFile: config.DEEPSTREAM_CONFIG_FILE,
 };
 YOLO.init(yoloConfig);
 
@@ -80,43 +82,6 @@ DBManager.init().then(
     console.error(err)
   }
 )
-
-// TODO Move the stdout code into it's own module
-var videoResolution = null;
-
-if(SIMULATION_MODE) {
-  videoResolution = {
-    w: 1280,
-    h: 720
-  }
-  Opendatacam.setVideoResolution(videoResolution)
-}
-
-var stdoutBuffer = "";
-var stdoutInterval = "";
-var bufferLimit = 30000;
-var unhook_intercept = intercept(function(text) {
-  var stdoutText = text.toString();
-  // Hacky way to get the video resolution from YOLO
-  // We parse the stdout looking for "Video stream: 640 x 480"
-  // alternative would be to add this info to the JSON stream sent by YOLO, would need to send a PR to https://github.com/alexeyab/darknet
-  if(stdoutText.indexOf('Video stream:') > -1) {
-    var splitOnStream = stdoutText.toString().split("stream:")
-    var ratio = splitOnStream[1].split("\n")[0];
-    videoResolution = {
-      w : parseInt(ratio.split("x")[0].trim()),
-      h : parseInt(ratio.split("x")[1].trim())
-    }
-    Opendatacam.setVideoResolution(videoResolution);
-  }
-  stdoutBuffer += stdoutText;
-  stdoutInterval += stdoutText;
-
-  // Keep buffer maximum to 10000 characters
-  if(stdoutBuffer.length > bufferLimit) {
-    stdoutBuffer = stdoutBuffer.substring(stdoutBuffer.length - bufferLimit, stdoutBuffer.length);
-  }
-});
 
 app.prepare()
 .then(() => {

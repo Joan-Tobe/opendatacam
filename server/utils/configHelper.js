@@ -7,7 +7,7 @@ const config = require('../../config.json');
 // - If we have the environment variable defined we overrule the default and config
 const envAppPort = process.env.PORT_APP;
 const envDarknetMjpegStreamPort = process.env.PORT_DARKNET_MJPEG_STREAM;
-const envDarknetJsonStreamPort = process.env.PORT_DARKNET_JSON_STREAM;
+const envDeepstreamJsonStreamPort = process.env.PORT_DEEPSTREAM_JSON_STREAM;
 const envMongodbUrl = process.env.MONGODB_URL;
 
 /**
@@ -71,12 +71,12 @@ module.exports = {
     }
   },
   getJsonStreamPort: () => {
-    let port = getPortFromConfig(config, 'darknet_json_stream', 8070);
+    let port = getPortFromConfig(config, 'deepstream_json_stream', 8070);
     if (
-      envDarknetJsonStreamPort &&
-      parseAndTestIsNumber(envDarknetJsonStreamPort)
+      envDeepstreamJsonStreamPort &&
+      parseAndTestIsNumber(envDeepstreamJsonStreamPort)
     ) {
-      return parseInt(envDarknetJsonStreamPort, 10);
+      return parseInt(envDeepstreamJsonStreamPort, 10);
     } else {
       return port;
     }
