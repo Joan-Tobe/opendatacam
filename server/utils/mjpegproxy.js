@@ -20,7 +20,7 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 var url = require('url');
-var http = require('http');
+var { spawn } = require('child_process');
 
 function extractBoundary(contentType) {
   contentType = contentType.replace(/\s+/g, '');
@@ -36,19 +36,17 @@ function extractBoundary(contentType) {
   return contentType.substring(startIndex + 9, endIndex).replace(/"/gi,'').replace(/^\-\-/gi, '');
 }
 
-var MjpegProxy = exports.MjpegProxy = function(mjpegUrl) {
+var MjpegProxy = exports.MjpegProxy = function(command) {
   var self = this;
 
-  if (!mjpegUrl) throw new Error('Please provide a source MJPEG URL');
-
-  self.mjpegOptions = url.parse(mjpegUrl);
+  if (!command) throw new Error('Please provide a command that starts ffmpeg');
 
   self.audienceResponses = [];
   self.newAudienceResponses = [];
 
   self.boundary = null;
   self.globalMjpegResponse = null;
-  self.mjpegRequest = null;
+  self.ffmpeg = null;
 
   self.proxyRequest = function(req, res) {
     if (res.socket==null) {
@@ -56,14 +54,17 @@ var MjpegProxy = exports.MjpegProxy = function(mjpegUrl) {
     }
 
     // There is already another client consuming the MJPEG response
-    if (self.mjpegRequest !== null) {
+    if (self.ffmpeg !== null) {
       self._newClient(req, res);
     } else {
-      // Send source MJPEG request
-      self.mjpegRequest = http.get(self.mjpegOptions, function(mjpegResponse) {
-        // console.log('request');
+      // Execute ffmpeg to start transcoding
+      self.ffmpeg = spawn(command, { shell: true, stdio: [ 'inherit', 'pipe', 'inherit' ] });
+      handleResponse();
+
+      function handleResponse() {
+        const mjpegResponse = self.ffmpeg.stdout;
         self.globalMjpegResponse = mjpegResponse;
-        self.boundary = extractBoundary(mjpegResponse.headers['content-type']);
+        self.boundary = 'ffserver'; // hardcoded into ffmpeg
 
         self._newClient(req, res);
 
@@ -113,10 +114,10 @@ var MjpegProxy = exports.MjpegProxy = function(mjpegUrl) {
         mjpegResponse.on('close', function () {
           // console.log("...close");
         });
-      });
+      }
 
-      self.mjpegRequest.on('error', function(e) {
-        console.error('problem with request: ', e);
+      self.ffmpeg.on('error', function(e) {
+        console.error('problem starting command: ', e);
       });
     }
   }
@@ -141,8 +142,9 @@ var MjpegProxy = exports.MjpegProxy = function(mjpegUrl) {
       }
 
       if (self.audienceResponses.length == 0) {
-        self.mjpegRequest = null;
-        self.globalMjpegResponse.destroy();
+        self.ffmpeg.kill();
+        self.ffmpeg.stdout.destroy();
+        self.ffmpeg = null;
       }
     });
   }

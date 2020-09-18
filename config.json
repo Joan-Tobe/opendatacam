@@ -8,6 +8,7 @@
     "w": 1280,
     "h": 720
   },
+  "MJPEG_OPTS": "-r 10 -b 4000k -s 640x480",
   "TRACKER_SETTINGS": {
     "objectMaxAreaInPercentageOfFrame": 80,
     "confidence_threshold": 0.2,
@@ -66,7 +67,7 @@
   "PORTS": {
     "app": 8080,
     "deepstream_json_stream": 8070,
-    "darknet_mjpeg_stream": 8090
+    "deepstream_rtsp": 8020
   },
   "GPS": {
     "enabled": false,

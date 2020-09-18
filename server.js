@@ -136,9 +136,10 @@ app.prepare()
    * More on MJPEG over HTTP: https://en.wikipedia.org/wiki/Motion_JPEG#M-JPEG_over_HTTP
    *
   */
+  const rtspURL = `rtsp://localhost:${config.PORTS.deepstream_rtsp}/ds-test`
   express.get('/webcam/stream',
-              // Proxy MJPEG stream from darknet to avoid freezing issues
-              new MjpegProxy(`http://127.0.0.1:${config.PORTS.darknet_mjpeg_stream}`).proxyRequest);
+              // Proxy MJPEG stream from deepstream
+              new MjpegProxy(`ffmpeg -nostats -nostdin -buffer_size 2000000 -i ${rtspURL} -f mpjpeg ${config.MJPEG_OPTS} -`).proxyRequest);
 
   /**
    * @api {get} /webcam/resolution Resolution
@@ -146,6 +147,9 @@ app.prepare()
    * @apiGroup Webcam
    *
    * @apiDescription Limitation: Only available after YOLO has started
+   *
+   * Warning: this is the resolution of tracker data, it does *NOT*
+   * necessarily match the frame size of /webcam/stream.
    *
    * @apiSuccessExample {json} Success Response:
    *     {
