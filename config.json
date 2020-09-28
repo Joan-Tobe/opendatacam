@@ -1,7 +1,7 @@
 {
   "OPENDATACAM_VERSION": "3.0.1",
   "RECORDINGS_PATH": "TO_REPLACE_RECORDINGS_PATH",
-  "PATH_TO_YOLO_DEEPSTREAM" : "/opt/nvidia/deepstream/deepstream-4.0/sources/objectDetector_Yolo/",
+  "PATH_TO_YOLO_DEEPSTREAM" : "/opt/nvidia/deepstream/deepstream-5.0/sources/objectDetector_Yolo/",
   "DEEPSTREAM_APP": "../apps/sample_apps/deepstream-app/deepstream-app2",
   "DEEPSTREAM_CONFIG_FILE": "deepstream_app_config_yoloV3_tiny_http_rtsp.txt",
   "DEEPSTREAM_RESOLUTION": {

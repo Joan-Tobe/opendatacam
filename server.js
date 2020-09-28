@@ -18,6 +18,7 @@ const config = require('./config.json');
 const configHelper = require('./server/utils/configHelper')
 const Tracker = require('node-moving-things-tracker').Tracker;
 const GpsTracker = require('./server/tracker/GpsTracker');
+const notify = require('sd-notify')
 
 if(process.env.npm_package_version !== config.OPENDATACAM_VERSION) {
   console.log('-----------------------------------')
@@ -1139,6 +1140,8 @@ app.prepare()
       console.log(`> Ready on http://localhost:${port}`)
       console.log(`> Ready on http://${ip.address()}:${port}`)
     }
+    notify.ready()
+    notify.startWatchdogMode(2800)
   })
 })
 
